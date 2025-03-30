@@ -36,8 +36,8 @@ typedef enum {
 
 typedef struct {
     bool is_press_action;
-    td_state_t state;
     bool reset_on_next;
+    td_state_t state;
 } td_tap_t;
 
 enum {
@@ -76,7 +76,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     [WIN_BASE] = LAYOUT_ansi_67(
         KC_GRV,     KC_1,     KC_2,     KC_3,    KC_4,    KC_5,    KC_6,    KC_7,    KC_8,    KC_9,    KC_0,     KC_MINS,   KC_EQL,   KC_BSPC,          KC_MUTE,
         KC_TAB,     KC_Q,     KC_W,     KC_E,    KC_R,    KC_T,    KC_Y,    KC_U,    KC_I,    KC_O,    KC_P,     KC_LBRC,   KC_RBRC,  KC_BSLS,          KC_DEL,
-        VK_HYPRESC, KC_A,     KC_S,     KC_D,    KC_F,    KC_G,    KC_H,    KC_J,    KC_K,    KC_L,    KC_SCLN,  KC_QUOT,             KC_ENT,           KC_HOME,
+        KC_ESC,     KC_A,     KC_S,     KC_D,    KC_F,    KC_G,    KC_H,    KC_J,    KC_K,    KC_L,    KC_SCLN,  KC_QUOT,             KC_ENT,           KC_HOME,
         KC_LSFT,              KC_Z,     KC_X,    KC_C,    KC_V,    KC_B,    KC_N,    KC_M,    KC_COMM, KC_DOT,   KC_SLSH,             KC_RSFT, KC_UP,
         KC_LCTL,    KC_LGUI,  KC_LALT,                             KC_SPC,                             KC_RALT,  VK_FN1WIN, VK_FN2,   KC_LEFT, KC_DOWN, KC_RGHT),
 
@@ -102,16 +102,6 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         _______, _______,  _______,                             _______,                            _______,  _______,  _______,  _______, _______, _______)
 };
 
-// Determine the tapdance state to return
-td_state_t cur_dance(tap_dance_state_t *state) {
-    if (state->count == 1) {
-        if (state->interrupted || !state->pressed) return TD_SINGLE_TAP;
-        else return TD_SINGLE_HOLD;
-    }
-
-    if (state->count == 2) return TD_DOUBLE_SINGLE_TAP;
-    else return TD_UNKNOWN; // Any number higher than the maximum state value you return above
-}
 // Initialize tap structure associated with example tap dance key
 static td_tap_t ql_tap_state = {
     .is_press_action = true,
@@ -119,11 +109,26 @@ static td_tap_t ql_tap_state = {
     .reset_on_next = false
 };
 
+// Determine the tapdance state to return
+td_state_t cur_dance(tap_dance_state_t *state) {
+    if (state->count == 1 && ql_tap_state.state != TD_SINGLE_TAP) {
+        if (state->interrupted || !state->pressed) return TD_SINGLE_TAP;
+        else return TD_SINGLE_HOLD;
+    }
+
+    if (state->count == 2) return TD_DOUBLE_SINGLE_TAP;
+    else return TD_UNKNOWN; // Any number higher than the maximum state value you return above
+}
+
 void generic_finish(layers l, tap_dance_state_t *state) {
     ql_tap_state.state = cur_dance(state);
     switch (ql_tap_state.state) {
         case TD_SINGLE_TAP:
-            layer_on(l);
+            if (layer_state_is(l)) {
+                layer_off(l);
+            } else {
+                layer_on(l);
+            }
             ql_tap_state.reset_on_next = true;
             break;
         case TD_SINGLE_HOLD:
@@ -187,11 +192,13 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     if (!process_record_keychron_common(keycode, record)) {
         return false;
     }
-    if (ql_tap_state.state == TD_SINGLE_TAP && ql_tap_state.reset_on_next) {
-        ql_tap_state.reset_on_next = false;
+    if (ql_tap_state.state == TD_SINGLE_TAP && ql_tap_state.reset_on_next && !record->event.pressed) {
         if ( layer_state_is(MAC_FN1)) { layer_off(MAC_FN1); }
         if ( layer_state_is(WIN_FN1)) { layer_off(WIN_FN1); }
         if ( layer_state_is(_FN2)) { layer_off(_FN2); }
+    }
+    if (ql_tap_state.reset_on_next && !record->event.pressed) {
+        ql_tap_state.reset_on_next = false;
     }
     return true;
 }
@@ -204,16 +211,29 @@ uint16_t get_tapping_term(uint16_t keycode, keyrecord_t *record) {
             return TAPPING_TERM;
     }
 }
+void set_matrix_color_for_tap_dance(uint8_t key) {
+    switch (ql_tap_state.state) {
+        case TD_SINGLE_TAP:
+            rgb_matrix_set_color(key, RGB_GREEN);
+            break;
+        case TD_SINGLE_HOLD:
+            rgb_matrix_set_color(key, RGB_PURPLE);
+            break;
+        case TD_DOUBLE_SINGLE_TAP:
+            rgb_matrix_set_color(key, RGB_RED);
+            break;
+        default:
+            break;
+    }
+}
 // override current RGB effect for special indicators
 bool rgb_matrix_indicators_advanced_user(uint8_t led_min, uint8_t led_max)
 {
-    // if caps lock is engaged
     if (layer_state_is(MAC_FN1) || layer_state_is(WIN_FN1)) {
-        rgb_matrix_set_color(61, RGB_RED);
+        set_matrix_color_for_tap_dance(61);
     }
     if (layer_state_is(_FN2)) {
-
-        rgb_matrix_set_color(62, RGB_RED);
+        set_matrix_color_for_tap_dance(62);
     }
     return false;
 }
